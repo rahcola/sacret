@@ -3,46 +3,76 @@
 import argparse
 import json
 import subprocess
-import sys
 
-def list_secrets(args):
-    pw_p = subprocess.Popen(["gpg", "-d", args.password],
+class CannotReadEncrypted(Exception):
+    pass
+
+def read_encrypted(path, password_path):
+    pw_p = subprocess.Popen(["gpg", "-d", password_path],
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)
-    index_p = subprocess.Popen(["gpg", "--batch", "--passphrase-fd", "0",
-                                "-d", args.index],
-                               stdin=pw_p.stdout,
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
+    text_p = subprocess.Popen(["gpg", "--batch", "--passphrase-fd", "0",
+                               "-d", path],
+                              stdin=pw_p.stdout,
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE)
     pw_p.stdout.close()
     pw_err = b""
-    index_err = b""
-    index = ""
-    while pw_p.poll() is None or index_p.poll() is None:
+    text_err = b""
+    text = b""
+    while pw_p.poll() is None or text_p.poll() is None:
         pw_err += pw_p.stderr.read()
-        index_err += index_p.stderr.read()
-        index += index_p.stdout.read().decode("utf-8")
-    if index_p.returncode > 0:
+        text_err += text_p.stderr.read()
+        text += text_p.stdout.read()
+    if text_p.returncode > 0:
         if pw_p.returncode > 0:
-            sys.stderr.buffer.write(pw_err)
-        sys.stderr.buffer.write(index_err)
-    print("\n".join(json.loads(index).keys()))
+            raise CannotReadEncrypted(pw_err.decode("utf-8"))
+        raise CannotReadEncrypted(text_err.decode("utf-8"))
+    return text.decode("utf-8")
+
+def read_index(index_path, password_path):
+    return json.loads(read_encrypted(index_path, password_path))
+
+def list_secrets(args):
+    print("\n".join(read_index(args.index, args.password).keys()))
+
+def show_secret(args):
+    entry = read_index(args.index, args.password)[args.name]
+    print(read_encrypted(entry["path"],
+                         entry["password"] if "password" in entry
+                         else args.password),
+          end="")
+
+def add_index_argument(parser):
+    parser.add_argument("-i", "--index",
+                        help="encrypted index of secrets",
+                        default="~/.sacret/index.asc",
+                        metavar="<path>")
+
+def add_password_argument(parser):
+    parser.add_argument("-p", "--password",
+                        help="encrypted password file for index",
+                        default="~/.sacret/index_password.asc",
+                        metavar="<path>")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plain file secret manager.")
-    subparsers = parser.add_subparsers(metavar="<command>")
+    subparsers = parser.add_subparsers(description=None, metavar="<command>")
 
     list_parser = subparsers.add_parser("list",
                                         description="List the names of the secrets.",
                                         help="list the names of the secrets")
+    add_index_argument(list_parser)
+    add_password_argument(list_parser)
     list_parser.set_defaults(command=list_secrets)
-    list_parser.add_argument("-i", "--index",
-                             help="encrypted index of secrets",
-                             default="~/.sacret/index.asc",
-                             metavar="<path>")
-    list_parser.add_argument("-p", "--password",
-                             help="encrypted password file",
-                             default="~/.sacret/password.asc",
-                             metavar="<path>")
+
+    show_parser = subparsers.add_parser("show",
+                                        description="Show the secret.",
+                                        help="show the secret")
+    show_parser.add_argument("name", help="name of the secret")
+    add_index_argument(show_parser)
+    add_password_argument(show_parser)
+    show_parser.set_defaults(command=show_secret)
+
     args = parser.parse_args()
     args.command(args)
