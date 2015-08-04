@@ -43,6 +43,15 @@ def show_secret(args):
                          else args.password),
           end="")
 
+def copy_secret(args):
+    entry = read_index(args.index, args.password)[args.name]
+    secret = read_encrypted(entry["path"],
+                            entry["password"] if "password" in entry
+                            else args.password).splitlines()[0]
+    p = subprocess.Popen(["xclip", "-selection", "clipboard"],
+                          stdin=subprocess.PIPE)
+    p.communicate(secret.encode("utf-8"))
+
 def add_index_argument(parser):
     parser.add_argument("-i", "--index",
                         help="encrypted index of secrets",
@@ -73,6 +82,14 @@ if __name__ == "__main__":
     add_index_argument(show_parser)
     add_password_argument(show_parser)
     show_parser.set_defaults(command=show_secret)
+
+    copy_parser = subparsers.add_parser("copy",
+                                        description="Copy the secret to clipboard.",
+                                        help="copy the secret to clipboard")
+    copy_parser.add_argument("name", help="name of the secret")
+    add_index_argument(copy_parser)
+    add_password_argument(copy_parser)
+    copy_parser.set_defaults(command=copy_secret)
 
     args = parser.parse_args()
     args.command(args)
