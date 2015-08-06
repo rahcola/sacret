@@ -66,6 +66,7 @@ def add_password_argument(parser):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plain file secret manager.")
+    parser.set_defaults(command=lambda args: parser.print_help())
     subparsers = parser.add_subparsers(description=None, metavar="<command>")
 
     list_parser = subparsers.add_parser("list",
