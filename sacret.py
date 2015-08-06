@@ -33,23 +33,22 @@ def read_encrypted(path, password_path):
 def read_index(index_path, password_path):
     return json.loads(read_encrypted(index_path, password_path))
 
+def read_secret(index_path, password_path, name):
+    entry = read_index(index_path, password_path)[name]
+    return read_encrypted(entry["path"],
+                          entry["password"] if "password" in entry
+                          else password_path)
+
 def list_secrets(args):
     print("\n".join(read_index(args.index, args.password).keys()))
 
 def show_secret(args):
-    entry = read_index(args.index, args.password)[args.name]
-    print(read_encrypted(entry["path"],
-                         entry["password"] if "password" in entry
-                         else args.password),
-          end="")
+    print(read_secret(args.index, args.password, args.name), end="")
 
 def copy_secret(args):
-    entry = read_index(args.index, args.password)[args.name]
-    secret = read_encrypted(entry["path"],
-                            entry["password"] if "password" in entry
-                            else args.password).splitlines()[0]
+    secret = read_secret(args.index, args.password, args.name).splitlines()[0]
     p = subprocess.Popen(["xclip", "-selection", "clipboard"],
-                          stdin=subprocess.PIPE)
+                         stdin=subprocess.PIPE)
     p.communicate(secret.encode("utf-8"))
 
 def add_index_argument(parser):
