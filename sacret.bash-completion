@@ -1,0 +1,70 @@
+_sacret_one_of () {
+    local flag
+    for flag in $2; do
+        [ "$1" = "${flag}" ] && return 0
+    done
+    return 1
+}
+
+_sacret_difference () {
+    local e
+    local diff=""
+    for e in $1; do
+        if ! _sacret_one_of "${e}" "$2"; then
+            diff="${diff} ${e}"
+        fi
+    done
+    echo -n ${diff}
+}
+
+_sacret_find_params () {
+    local params=""
+    local prev=""
+    local t
+    for t in $2; do
+        if _sacret_one_of "${prev}" "$1"; then
+            params="${params} ${prev} ${t}"
+        fi
+        prev="${t}"
+    done
+    echo -n "${params}"
+}
+
+_sacret_complete_remaining () {
+    local remaining=$(_sacret_difference "$1" "$2")
+    COMPREPLY+=($(compgen -W "${remaining}" -- ${cur}))
+}
+
+_sacret () {
+    local commands="list show copy"
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    COMPREPLY=()
+    if [ ${COMP_CWORD} -gt 1 ]; then
+        local prev="${COMP_WORDS[COMP_CWORD-1]}"
+        local flags="--index --password"
+        case "${COMP_WORDS[1]}" in
+            list)
+                if _sacret_one_of "${prev}" "${flags}"; then
+                    compopt -o default
+                elif case ${cur} in -*) true;; *) false;; esac; then
+                    _sacret_complete_remaining "${flags}" "${COMP_WORDS[*]}"
+                fi
+                ;;
+            show|copy)
+                if _sacret_one_of "${prev}" "${flags}"; then
+                    compopt -o default
+                elif case ${cur} in -*) true;; *) false;; esac; then
+                    _sacret_complete_remaining "${flags}" "${COMP_WORDS[*]}"
+                else
+                    local params=$(_sacret_find_params "${flags}" "${COMP_WORDS[*]}")
+                    local names="$(./sacret.py list ${params} 2>/dev/null)"
+                    COMPREPLY+=($(compgen -W "${names}" -- ${cur}))
+                fi
+                ;;
+        esac
+    else
+        COMPREPLY+=($(compgen -W "${commands}" -- ${cur}))
+    fi
+}
+
+complete -F _sacret './sacret.py'
