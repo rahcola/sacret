@@ -36,14 +36,14 @@ _sacret_complete_remaining () {
 }
 
 _sacret () {
-    local commands="list show copy"
+    local commands="init list show copy"
     local cur="${COMP_WORDS[COMP_CWORD]}"
     COMPREPLY=()
     if [ ${COMP_CWORD} -gt 1 ]; then
         local prev="${COMP_WORDS[COMP_CWORD-1]}"
-        local flags="--index --password"
+        local flags="--index"
         case "${COMP_WORDS[1]}" in
-            list)
+            init|list)
                 if _sacret_one_of "${prev}" "${flags}"; then
                     compopt -o default
                 elif case ${cur} in -*) true;; *) false;; esac; then
