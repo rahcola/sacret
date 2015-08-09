@@ -22,20 +22,22 @@ def name_to_file(name, salt):
     bytes = name.encode("utf-8") + base64.urlsafe_b64decode(salt)
     return base64.urlsafe_b64encode(hashlib.sha256(bytes).digest()).decode("utf-8")
 
-def read_index(index):
+def read_index(secrets):
+    index = os.path.join(secrets, "index.asc")
     salt, *names = read_encrypted(index).splitlines()
     return {name: name_to_file(name, salt) for name in names}
 
-def read_secret(index, name):
-    f = os.path.join(os.path.dirname(index), read_index(index)[name])
+def read_secret(secrets, name):
+    f = os.path.join(secrets, read_index(secrets)[name])
     return read_encrypted(f)
 
 def init_secrets(args):
-    if os.path.exists(args.index):
-        print("index file {} exists".format(args.index), file=sys.stderr)
+    index = os.path.join(args.secrets, "index.asc")
+    if os.path.exists(args.secrets):
+        print("index file {} exists".format(index), file=sys.stderr)
         sys.exit(1)
     p = subprocess.Popen(["gpg", "-e", "-a",
-                          "--output", args.index],
+                          "--output", index],
                          stdin=subprocess.PIPE,
                          stderr=subprocess.PIPE)
     salt = base64.urlsafe_b64encode(os.urandom(16))
@@ -45,53 +47,54 @@ def init_secrets(args):
         sys.exit(1)
 
 def list_secrets(args):
-    print("\n".join(read_index(args.index).keys()))
+    print("\n".join(read_index(args.secrets).keys()))
 
 def show_secret(args):
-    print(read_secret(args.index, args.name), end="")
+    print(read_secret(args.secrets, args.name), end="")
 
 def copy_secret(args):
-    secret = read_secret(args.index, args.name).splitlines()[0]
+    secret = read_secret(args.secrets, args.name).splitlines()[0]
     p = subprocess.Popen(["xclip", "-selection", "clipboard"],
                          stdin=subprocess.PIPE)
     p.communicate(secret.encode("utf-8"))
 
-def add_index_argument(parser):
-    parser.add_argument("-i", "--index",
-                        help="encrypted index of secrets",
-                        default=os.path.expanduser("~/.sacret/index.asc"),
-                        metavar="<path>")
+def argument_secrets(parser):
+    parser.add_argument("-s", "--secrets",
+                        help="directory of secrets",
+                        default=os.path.expanduser("~/.sacret"),
+                        metavar="<directory>")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plain file secret manager.")
-    parser.set_defaults(command=lambda args: parser.print_help())
-    subparsers = parser.add_subparsers(description=None, metavar="<command>")
+    parser.set_defaults(command=lambda a: parser.print_help())
+    subparsers = parser.add_subparsers(title="commands",
+                                       description=None,
+                                       metavar="<command>")
+    p = subparsers.add_parser("init",
+                              description="Create an empty index",
+                              help="create an empty index")
+    argument_secrets(p)
+    p.set_defaults(command=init_secrets)
 
-    init_parser = subparsers.add_parser("init",
-                                        description="Create an index of secrets.",
-                                        help="create an index of secrets")
-    add_index_argument(init_parser)
-    init_parser.set_defaults(command=init_secrets)
+    p = subparsers.add_parser("list",
+                              description="List all secrets",
+                              help="list all secrets")
+    argument_secrets(p)
+    p.set_defaults(command=list_secrets)
 
-    list_parser = subparsers.add_parser("list",
-                                        description="List the names of the secrets.",
-                                        help="list the names of the secrets")
-    add_index_argument(list_parser)
-    list_parser.set_defaults(command=list_secrets)
+    p = subparsers.add_parser("show",
+                              description="Show a secret",
+                              help="show a secret")
+    argument_secrets(p)
+    p.add_argument("name", help="name of a secret")
+    p.set_defaults(command=show_secret)
 
-    show_parser = subparsers.add_parser("show",
-                                        description="Show the secret.",
-                                        help="show the secret")
-    show_parser.add_argument("name", help="name of the secret")
-    add_index_argument(show_parser)
-    show_parser.set_defaults(command=show_secret)
-
-    copy_parser = subparsers.add_parser("copy",
-                                        description="Copy the secret to clipboard.",
-                                        help="copy the secret to clipboard")
-    copy_parser.add_argument("name", help="name of the secret")
-    add_index_argument(copy_parser)
-    copy_parser.set_defaults(command=copy_secret)
+    p = subparsers.add_parser("copy",
+                              description="Copy first line of a secret to clipboard",
+                              help="copy first line of a secret to clipboard")
+    argument_secrets(p)
+    p.add_argument("name", help="name of a secret")
+    p.set_defaults(command=copy_secret)
 
     args = parser.parse_args()
     args.command(args)
