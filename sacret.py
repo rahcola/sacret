@@ -11,6 +11,8 @@ import tempfile
 
 
 class Index(object):
+    INDEX = "index.asc"
+
     def __init__(self, salt, names, sacret_dir):
         self.salt = salt
         self.names = names
@@ -36,7 +38,7 @@ class Index(object):
                                         hash_name(name, self.salt))
 
     def to_disk(self):
-        path = os.path.join(self.sacret_dir, "index.asc")
+        path = os.path.join(self.sacret_dir, self.__class__.INDEX)
         with subprocess.Popen(["gpg", "-q", "-e", "-a", "--output", path],
                               universal_newlines=True,
                               stdin=subprocess.PIPE) as gpg:
@@ -45,7 +47,7 @@ class Index(object):
 
     @classmethod
     def from_disk(cls, sacret_dir):
-        path = os.path.join(sacret_dir, "index.asc")
+        path = os.path.join(sacret_dir, cls.INDEX)
         salt, *names = subprocess.check_output(["gpg", "-q", "-d", path],
                                                universal_newlines=True).splitlines()
         return cls(salt,
@@ -55,7 +57,7 @@ class Index(object):
 
     @classmethod
     def init(cls, sacret_dir):
-        path = os.path.join(sacret_dir, "index.asc")
+        path = os.path.join(sacret_dir, cls.INDEX)
         if os.path.exists(path):
             print("index file {} exists".format(path), file=sys.stderr)
             return 1
