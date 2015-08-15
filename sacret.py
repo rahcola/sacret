@@ -3,6 +3,7 @@
 import argparse
 import base64
 import hashlib
+import os
 import os.path
 import subprocess
 import sys
@@ -59,9 +60,10 @@ def copy_secret(args):
     p.communicate(secret.encode("utf-8"))
 
 def argument_secrets(parser):
+    default = os.getenv("SACRET_DIR", default=os.path.expanduser("~/.sacret"))
     parser.add_argument("-s", "--secrets",
                         help="directory of secrets",
-                        default=os.path.expanduser("~/.sacret"),
+                        default=default,
                         metavar="<directory>")
 
 if __name__ == "__main__":
