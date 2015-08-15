@@ -85,6 +85,9 @@ def copy_secret(args):
             return head.wait()
 
 def edit_secret(args):
+    if os.getenv("EDITOR") is None:
+        print("please set EDITOR", file=sys.stderr)
+        return 1
     index = Index.from_disk(args.secrets)
     if args.name not in index:
         index.add(args.name)
