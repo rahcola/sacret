@@ -76,12 +76,16 @@ def show_secret(args):
     print(read_secret(args.secrets, args.name), end="")
 
 def copy_secret(args):
-    secret = read_secret(args.secrets, args.name).splitlines()[0]
-    p = subprocess.Popen(["xclip", "-selection", "clipboard"], stdin=subprocess.PIPE)
-    err = p.communicate(secret.encode("utf-8"))[1]
-    if p.returncode != 0:
-        print(err, end="", file=sys.stderr)
-        sys.exit(1)
+    index = Index.from_file(os.path.join(args.secrets, "index.asc"))
+    gpg = subprocess.Popen(["gpg", "-d", os.path.join(args.secrets, index[args.name])],
+                           stdout=subprocess.PIPE)
+    head = subprocess.Popen(["head -q -n 1 | tr -d '\n' | xclip -selection clipboard"],
+                            shell=True,
+                            stdin=gpg.stdout)
+    gpg.stdout.close()
+    r = head.wait()
+    if r != 0:
+        sys.exit(r)
 
 def edit_secret(args):
     secret_file = os.path.join(args.secrets, read_index(args.secrets)[args.name])
