@@ -37,11 +37,11 @@ class Index(object):
 
     def to_disk(self):
         path = os.path.join(self.sacret_dir, "index.asc")
-        gpg = subprocess.Popen(["gpg", "-q", "-e", "-a", "--output", path],
-                               universal_newlines=True,
-                               stdin=subprocess.PIPE)
-        gpg.communicate("\n".join([self.salt] + list(self.keys())))
-        return gpg.returncode
+        with subprocess.Popen(["gpg", "-q", "-e", "-a", "--output", path],
+                              universal_newlines=True,
+                              stdin=subprocess.PIPE) as gpg:
+            gpg.communicate("\n".join([self.salt] + list(self.keys())))
+            return gpg.wait()
 
     @classmethod
     def from_disk(cls, sacret_dir):
@@ -60,12 +60,16 @@ class Index(object):
             print("index file {} exists".format(path), file=sys.stderr)
             return 1
         cmd = ["gpg", "-q", "-e", "-a", "--output", path]
-        p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-        salt = base64.urlsafe_b64encode(os.urandom(16))
-        p.communicate(salt + b"\n")
-        if p.returncode != 0:
-            raise subprocess.CalledProcessError(p.returncode, cmd)
-        return cls(salt, {}, sacret_dir)
+        try:
+            gpg = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+            salt = base64.urlsafe_b64encode(os.urandom(16))
+            gpg.communicate(salt + b"\n")
+            return cls(salt, {}, sacret_dir)
+        except:
+            gpg.kill()
+        finally:
+            if gpg.wait() != 0:
+                raise subprocess.CalledProcessError(p.returncode, cmd)
 
 
 def hash_name(name, salt):
@@ -81,13 +85,13 @@ def show_secret(args):
                             Index.from_disk(args.secrets)[args.name]])
 
 def copy_secret(args):
-    gpg = subprocess.Popen(["gpg", "-q", "-d", Index.from_disk(args.secrets)[args.name]],
-                           stdout=subprocess.PIPE)
-    head = subprocess.Popen(["head -q -n 1 | tr -d '\n' | xclip -selection clipboard"],
-                            shell=True,
-                            stdin=gpg.stdout)
-    gpg.stdout.close()
-    return head.wait()
+    with subprocess.Popen(["gpg", "-q", "-d", Index.from_disk(args.secrets)[args.name]],
+                          stdout=subprocess.PIPE) as gpg:
+        with subprocess.Popen(["head -q -n 1 | tr -d '\n' | xclip -selection clipboard"],
+                              shell=True,
+                              stdin=gpg.stdout) as head:
+            gpg.stdout.close()
+            return head.wait()
 
 def add_secret(args):
     index = Index.from_disk(args.secrets)
