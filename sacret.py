@@ -7,6 +7,7 @@ import os
 import os.path
 import subprocess
 import sys
+import tempfile
 
 
 def read_encrypted(path):
@@ -59,6 +60,17 @@ def copy_secret(args):
                          stdin=subprocess.PIPE)
     p.communicate(secret.encode("utf-8"))
 
+def edit_secret(args):
+    secret_file = os.path.join(args.secrets, read_index(args.secrets)[args.name])
+    try:
+        f, temp_file = tempfile.mkstemp(text=True)
+        subprocess.check_call(["gpg", "-d", secret_file], stdout=f)
+        subprocess.check_call(["$EDITOR {}".format(temp_file)], shell=True)
+        subprocess.check_call(["gpg", "-e", "-a", "--output", secret_file, temp_file])
+    finally:
+        os.close(f)
+        os.remove(temp_file)
+
 def argument_secrets(parser):
     default = os.getenv("SACRET_DIR", default=os.path.expanduser("~/.sacret"))
     parser.add_argument("-s", "--secrets",
@@ -97,6 +109,13 @@ if __name__ == "__main__":
     argument_secrets(p)
     p.add_argument("name", help="name of a secret")
     p.set_defaults(command=copy_secret)
+
+    p = subparsers.add_parser("edit",
+                              description="Edit a secret",
+                              help="edit a secret")
+    argument_secrets(p)
+    p.add_argument("name", help="name of a secret")
+    p.set_defaults(command=edit_secret)
 
     args = parser.parse_args()
     args.command(args)

@@ -20,7 +20,7 @@ _sacret_find_params () {
 }
 
 _sacret () {
-    local commands="init list show copy"
+    local commands="init list show copy edit"
     local flags="-h --help -s --secrets"
     local cur="${COMP_WORDS[COMP_CWORD]}"
     COMPREPLY=()
@@ -35,7 +35,7 @@ _sacret () {
             init|list)
                 COMPREPLY=($(compgen -W "${flags}" -- ${cur}))
                 ;;
-            show|copy)
+            show|copy|edit)
                 local params=$(_sacret_find_params "-s --secrets" "${COMP_WORDS[*]}")
                 #hack to do tilde expand
                 local names=$(./sacret.py list ${params/ \~\// $HOME\/} 2>/dev/null)
