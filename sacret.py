@@ -40,7 +40,7 @@ class Index(object):
         with subprocess.Popen(["gpg", "-q", "-e", "-a", "--output", path],
                               universal_newlines=True,
                               stdin=subprocess.PIPE) as gpg:
-            gpg.communicate("\n".join([self.salt] + list(self.keys())))
+            gpg.communicate("\n".join([self.salt] + list(self.keys())) + "\n")
             return gpg.wait()
 
     @classmethod
