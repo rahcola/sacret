@@ -11,9 +11,10 @@ import tempfile
 
 
 class Index(object):
-    def __init__(self, salt, names):
+    def __init__(self, salt, names, sacret_dir):
         self.salt = salt
         self.names = names
+        self.sacret_dir = sacret_dir
 
     def __len__(self):
         return len(self.names)
@@ -28,10 +29,23 @@ class Index(object):
         return self.names.keys()
 
     @classmethod
-    def from_file(cls, path):
-        salt, *names = read_encrypted(path).splitlines()
-        return cls(salt, {name: name_to_file(name, salt) for name in names})
+    def from_disk(cls, sacret_dir):
+        salt, *names = read_encrypted(os.path.join(sacret_dir, "index.asc")).splitlines()
+        return cls(salt, {name: name_to_file(name, salt) for name in names}, sacret_dir)
 
+    @classmethod
+    def create(cls, sacret_dir):
+        path = os.path.join(sacret_dir, "index.asc")
+        if os.path.exists(path):
+            print("index file {} exists".format(path), file=sys.stderr)
+            sys.exit(1)
+        p = subprocess.Popen(["gpg", "-e", "-a", "--output", path],
+                             stdin=subprocess.PIPE)
+        salt = base64.urlsafe_b64encode(os.urandom(16))
+        p.communicate(salt + b"\n")
+        if p.returncode > 0:
+            sys.exit(1)
+        return cls(salt, {}, sacret_dir)
 
 def read_encrypted(path):
     p = subprocess.Popen(["gpg", "-d", path],
@@ -47,36 +61,18 @@ def name_to_file(name, salt):
     bytes = name.encode("utf-8") + base64.urlsafe_b64decode(salt)
     return base64.urlsafe_b64encode(hashlib.sha256(bytes).digest()).decode("utf-8")
 
-def read_index(secrets):
-    return Index.from_file(os.path.join(secrets, "index.asc"))
-
 def read_secret(secrets, name):
-    f = os.path.join(secrets, read_index(secrets)[name])
+    f = os.path.join(secrets, Index.from_disk(secrets)[name])
     return read_encrypted(f)
 
-def init_secrets(args):
-    index = os.path.join(args.secrets, "index.asc")
-    if os.path.exists(args.secrets):
-        print("index file {} exists".format(index), file=sys.stderr)
-        sys.exit(1)
-    p = subprocess.Popen(["gpg", "-e", "-a",
-                          "--output", index],
-                         stdin=subprocess.PIPE,
-                         stderr=subprocess.PIPE)
-    salt = base64.urlsafe_b64encode(os.urandom(16))
-    err = p.communicate(salt + b"\n")[1]
-    if p.returncode > 0:
-        print(err, end="", file=sys.stderr)
-        sys.exit(1)
-
 def list_secrets(args):
-    print("\n".join(read_index(args.secrets).keys()))
+    print("\n".join(Index.from_disk(args.secrets).keys()))
 
 def show_secret(args):
     print(read_secret(args.secrets, args.name), end="")
 
 def copy_secret(args):
-    index = Index.from_file(os.path.join(args.secrets, "index.asc"))
+    index = Index.from_disk(args.secrets)
     gpg = subprocess.Popen(["gpg", "-d", os.path.join(args.secrets, index[args.name])],
                            stdout=subprocess.PIPE)
     head = subprocess.Popen(["head -q -n 1 | tr -d '\n' | xclip -selection clipboard"],
@@ -88,7 +84,7 @@ def copy_secret(args):
         sys.exit(r)
 
 def edit_secret(args):
-    secret_file = os.path.join(args.secrets, read_index(args.secrets)[args.name])
+    secret_file = os.path.join(args.secrets, Index.from_disk(args.secrets)[args.name])
     try:
         f, temp_file = tempfile.mkstemp(text=True)
         subprocess.check_call(["gpg", "-d", secret_file], stdout=f)
@@ -115,7 +111,7 @@ if __name__ == "__main__":
                               description="Create an empty index",
                               help="create an empty index")
     argument_secrets(p)
-    p.set_defaults(command=init_secrets)
+    p.set_defaults(command=lambda args: Index.create(args.sercrets))
 
     p = subparsers.add_parser("list",
                               description="List all secrets",
