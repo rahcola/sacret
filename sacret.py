@@ -31,7 +31,10 @@ class Index(object):
     @classmethod
     def from_disk(cls, sacret_dir):
         salt, *names = read_encrypted(os.path.join(sacret_dir, "index.asc")).splitlines()
-        return cls(salt, {name: name_to_file(name, salt) for name in names}, sacret_dir)
+        return cls(salt,
+                   {name: os.path.join(sacret_dir, hash_name(name, salt))
+                    for name in names},
+                   sacret_dir)
 
     @classmethod
     def create(cls, sacret_dir):
@@ -57,13 +60,12 @@ def read_encrypted(path):
         sys.exit(1)
     return text.decode("utf-8")
 
-def name_to_file(name, salt):
+def hash_name(name, salt):
     bytes = name.encode("utf-8") + base64.urlsafe_b64decode(salt)
     return base64.urlsafe_b64encode(hashlib.sha256(bytes).digest()).decode("utf-8")
 
 def read_secret(secrets, name):
-    f = os.path.join(secrets, Index.from_disk(secrets)[name])
-    return read_encrypted(f)
+    return read_encrypted(Index.from_disk(secrets)[name])
 
 def list_secrets(args):
     print("\n".join(Index.from_disk(args.secrets).keys()))
@@ -72,8 +74,7 @@ def show_secret(args):
     print(read_secret(args.secrets, args.name), end="")
 
 def copy_secret(args):
-    index = Index.from_disk(args.secrets)
-    gpg = subprocess.Popen(["gpg", "-d", os.path.join(args.secrets, index[args.name])],
+    gpg = subprocess.Popen(["gpg", "-d", Index.from_disk(args.secrets)[args.name]],
                            stdout=subprocess.PIPE)
     head = subprocess.Popen(["head -q -n 1 | tr -d '\n' | xclip -selection clipboard"],
                             shell=True,
@@ -84,7 +85,7 @@ def copy_secret(args):
         sys.exit(r)
 
 def edit_secret(args):
-    secret_file = os.path.join(args.secrets, Index.from_disk(args.secrets)[args.name])
+    secret_file = Index.from_disk(args.secrets)[args.name]
     try:
         f, temp_file = tempfile.mkstemp(text=True)
         subprocess.check_call(["gpg", "-d", secret_file], stdout=f)
