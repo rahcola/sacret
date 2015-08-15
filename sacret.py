@@ -46,17 +46,14 @@ class Index(object):
                              stdin=subprocess.PIPE)
         salt = base64.urlsafe_b64encode(os.urandom(16))
         p.communicate(salt + b"\n")
-        if p.returncode > 0:
-            sys.exit(1)
+        if p.returncode != 0:
+            sys.exit(p.returncode)
         return cls(salt, {}, sacret_dir)
 
 def read_encrypted(path):
-    p = subprocess.Popen(["gpg", "-d", path],
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE)
-    text, err = p.communicate()
-    if p.returncode > 0:
-        print(err.decode("utf-8"), end="", file=sys.stderr)
+    p = subprocess.Popen(["gpg", "-q", "-d", path], stdout=subprocess.PIPE)
+    text = p.communicate()[0]
+    if p.returncode != 0:
         sys.exit(1)
     return text.decode("utf-8")
 
@@ -64,14 +61,11 @@ def hash_name(name, salt):
     bytes = name.encode("utf-8") + base64.urlsafe_b64decode(salt)
     return base64.urlsafe_b64encode(hashlib.sha256(bytes).digest()).decode("utf-8")
 
-def read_secret(secrets, name):
-    return read_encrypted(Index.from_disk(secrets)[name])
-
 def list_secrets(args):
     print("\n".join(Index.from_disk(args.secrets).keys()))
 
 def show_secret(args):
-    print(read_secret(args.secrets, args.name), end="")
+    print(read_encrypted(Index.from_disk(args.secrets)[args.name]), end="")
 
 def copy_secret(args):
     gpg = subprocess.Popen(["gpg", "-d", Index.from_disk(args.secrets)[args.name]],
@@ -80,15 +74,14 @@ def copy_secret(args):
                             shell=True,
                             stdin=gpg.stdout)
     gpg.stdout.close()
-    r = head.wait()
-    if r != 0:
-        sys.exit(r)
+    if head.wait() != 0:
+        sys.exit(head.returncode)
 
 def edit_secret(args):
     secret_file = Index.from_disk(args.secrets)[args.name]
     try:
         f, temp_file = tempfile.mkstemp(text=True)
-        subprocess.check_call(["gpg", "-d", secret_file], stdout=f)
+        subprocess.check_call(["gpg", "-q", "-d", secret_file], stdout=f)
         subprocess.check_call(["$EDITOR {}".format(temp_file)], shell=True)
         subprocess.check_call(["gpg", "-e", "-a", "--output", secret_file, temp_file])
     finally:
