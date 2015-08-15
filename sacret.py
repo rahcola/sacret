@@ -10,6 +10,29 @@ import sys
 import tempfile
 
 
+class Index(object):
+    def __init__(self, salt, names):
+        self.salt = salt
+        self.names = names
+
+    def __len__(self):
+        return len(self.names)
+
+    def __getitem__(self, key):
+        return self.names[key]
+
+    def __iter__(self):
+        return self.names.keys()
+
+    def keys(self):
+        return self.names.keys()
+
+    @classmethod
+    def from_file(cls, path):
+        salt, *names = read_encrypted(path).splitlines()
+        return cls(salt, {name: name_to_file(name, salt) for name in names})
+
+
 def read_encrypted(path):
     p = subprocess.Popen(["gpg", "-d", path],
                          stdout=subprocess.PIPE,
@@ -25,9 +48,7 @@ def name_to_file(name, salt):
     return base64.urlsafe_b64encode(hashlib.sha256(bytes).digest()).decode("utf-8")
 
 def read_index(secrets):
-    index = os.path.join(secrets, "index.asc")
-    salt, *names = read_encrypted(index).splitlines()
-    return {name: name_to_file(name, salt) for name in names}
+    return Index.from_file(os.path.join(secrets, "index.asc"))
 
 def read_secret(secrets, name):
     f = os.path.join(secrets, read_index(secrets)[name])
