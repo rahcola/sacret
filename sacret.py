@@ -25,8 +25,23 @@ class Index(object):
     def __iter__(self):
         return self.names.keys()
 
+    def __contains__(self, item):
+        return item in self.names
+
     def keys(self):
         return self.names.keys()
+
+    def add(self, name):
+        self.names[name] = os.path.join(self.sacret_dir,
+                                        hash_name(name, self.salt))
+
+    def to_disk(self):
+        path = os.path.join(self.sacret_dir, "index.asc")
+        gpg = subprocess.Popen(["gpg", "-q", "-e", "-a", "--output", path],
+                               universal_newlines=True,
+                               stdin=subprocess.PIPE)
+        gpg.communicate("\n".join([self.salt] + list(self.keys())))
+        return gpg.returncode
 
     @classmethod
     def from_disk(cls, sacret_dir):
@@ -44,7 +59,7 @@ class Index(object):
         if os.path.exists(path):
             print("index file {} exists".format(path), file=sys.stderr)
             return 1
-        cmd = ["gpg", "-e", "-a", "--output", path]
+        cmd = ["gpg", "-q", "-e", "-a", "--output", path]
         p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
         salt = base64.urlsafe_b64encode(os.urandom(16))
         p.communicate(salt + b"\n")
@@ -73,6 +88,15 @@ def copy_secret(args):
                             stdin=gpg.stdout)
     gpg.stdout.close()
     return head.wait()
+
+def add_secret(args):
+    index = Index.from_disk(args.secrets)
+    if args.name in index:
+        print("index already contains the secret {}".format(args.name),
+              file=sys.stderr)
+        return 1
+    index.add(args.name)
+    return index.to_disk()
 
 def edit_secret(args):
     secret_file = Index.from_disk(args.secrets)[args.name]
@@ -123,6 +147,13 @@ if __name__ == "__main__":
     argument_secrets(p)
     p.add_argument("name", help="name of a secret")
     p.set_defaults(command=copy_secret)
+
+    p = subparsers.add_parser("add",
+                              description="Add a secret",
+                              help="add a secret")
+    argument_secrets(p)
+    p.add_argument("name", help="name of a secret")
+    p.set_defaults(command=add_secret)
 
     p = subparsers.add_parser("edit",
                               description="Edit a secret",

@@ -20,7 +20,7 @@ _sacret_find_params () {
 }
 
 _sacret () {
-    local commands="init list show copy edit"
+    local commands="init list show copy add edit"
     local flags="-h --help -s --secrets"
     local cur="${COMP_WORDS[COMP_CWORD]}"
     COMPREPLY=()
@@ -32,7 +32,7 @@ _sacret () {
                 ;;
         esac
         case "${COMP_WORDS[1]}" in
-            init|list)
+            init|list|add)
                 COMPREPLY=($(compgen -W "${flags}" -- ${cur}))
                 ;;
             show|copy|edit)
