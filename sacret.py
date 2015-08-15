@@ -54,22 +54,13 @@ class Index(object):
                    sacret_dir)
 
     @classmethod
-    def create(cls, sacret_dir):
+    def init(cls, sacret_dir):
         path = os.path.join(sacret_dir, "index.asc")
         if os.path.exists(path):
             print("index file {} exists".format(path), file=sys.stderr)
             return 1
-        cmd = ["gpg", "-q", "-e", "-a", "--output", path]
-        try:
-            gpg = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-            salt = base64.urlsafe_b64encode(os.urandom(16))
-            gpg.communicate(salt + b"\n")
-            return cls(salt, {}, sacret_dir)
-        except:
-            gpg.kill()
-        finally:
-            if gpg.wait() != 0:
-                raise subprocess.CalledProcessError(p.returncode, cmd)
+        salt = base64.urlsafe_b64encode(os.urandom(16)).decode("utf-8")
+        return cls(salt, {}, sacret_dir).to_disk()
 
 
 def hash_name(name, salt):
@@ -128,7 +119,7 @@ if __name__ == "__main__":
                               description="Create an empty index",
                               help="create an empty index")
     argument_secrets(p)
-    p.set_defaults(command=lambda args: Index.create(args.sercrets))
+    p.set_defaults(command=lambda args: Index.init(args.sercrets))
 
     p = subparsers.add_parser("list",
                               description="List all secrets",
