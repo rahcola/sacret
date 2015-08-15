@@ -32,7 +32,7 @@ _sacret () {
                 ;;
         esac
         case "${COMP_WORDS[1]}" in
-            init|list|add)
+            init|list)
                 COMPREPLY=($(compgen -W "${flags}" -- ${cur}))
                 ;;
             show|copy|edit)

@@ -93,22 +93,20 @@ def copy_secret(args):
             gpg.stdout.close()
             return head.wait()
 
-def add_secret(args):
-    index = Index.from_disk(args.secrets)
-    if args.name in index:
-        print("index already contains the secret {}".format(args.name),
-              file=sys.stderr)
-        return 1
-    index.add(args.name)
-    return index.to_disk()
-
 def edit_secret(args):
-    secret_file = Index.from_disk(args.secrets)[args.name]
+    index = Index.from_disk(args.secrets)
+    if args.name not in index:
+        index.add(args.name)
+        r = index.to_disk()
+        if r != 0:
+            return r
+    secret_file = index[args.name]
     try:
         f, temp_file = tempfile.mkstemp(text=True)
-        subprocess.check_call(["gpg", "-q", "-d", secret_file], stdout=f)
+        if os.path.exists(secret_file):
+            subprocess.check_call(["gpg", "-q", "-d", secret_file], stdout=f)
         subprocess.check_call(["$EDITOR {}".format(temp_file)], shell=True)
-        return subprocess.call(["gpg", "-e", "-a", "--output", secret_file, temp_file])
+        return subprocess.call(["gpg", "-q", "-e", "-a", "--output", secret_file, temp_file])
     finally:
         os.close(f)
         os.remove(temp_file)
@@ -151,13 +149,6 @@ if __name__ == "__main__":
     argument_secrets(p)
     p.add_argument("name", help="name of a secret")
     p.set_defaults(command=copy_secret)
-
-    p = subparsers.add_parser("add",
-                              description="Add a secret",
-                              help="add a secret")
-    argument_secrets(p)
-    p.add_argument("name", help="name of a secret")
-    p.set_defaults(command=add_secret)
 
     p = subparsers.add_parser("edit",
                               description="Edit a secret",
