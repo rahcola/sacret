@@ -77,9 +77,11 @@ def show_secret(args):
 
 def copy_secret(args):
     secret = read_secret(args.secrets, args.name).splitlines()[0]
-    p = subprocess.Popen(["xclip", "-selection", "clipboard"],
-                         stdin=subprocess.PIPE)
-    p.communicate(secret.encode("utf-8"))
+    p = subprocess.Popen(["xclip", "-selection", "clipboard"], stdin=subprocess.PIPE)
+    err = p.communicate(secret.encode("utf-8"))[1]
+    if p.returncode != 0:
+        print(err, end="", file=sys.stderr)
+        sys.exit(1)
 
 def edit_secret(args):
     secret_file = os.path.join(args.secrets, read_index(args.secrets)[args.name])
