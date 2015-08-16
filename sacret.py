@@ -17,6 +17,7 @@ class Index(object):
         self.salt = salt
         self.names = names
         self.sacret_dir = sacret_dir
+        self.modified = False
 
     def __len__(self):
         return len(self.names)
@@ -30,12 +31,24 @@ class Index(object):
     def __contains__(self, item):
         return item in self.names
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is None and self.modified:
+            r = self.to_disk()
+            if r != 0:
+                path = os.path.join(self.sacret_dir, self.__class__.INDEX)
+                cmd = ["gpg", "-q", "-e", "-a", "--output", path]
+                raise subprocess.CalledProcessError(r, cmd)
+
     def keys(self):
         return self.names.keys()
 
     def add(self, name):
         self.names[name] = os.path.join(self.sacret_dir,
                                         hash_name(name, self.salt))
+        self.modified = True
 
     def to_disk(self):
         path = os.path.join(self.sacret_dir, self.__class__.INDEX)
@@ -43,7 +56,9 @@ class Index(object):
                               universal_newlines=True,
                               stdin=subprocess.PIPE) as gpg:
             gpg.communicate("\n".join([self.salt] + list(self.keys())) + "\n")
-            return gpg.wait()
+            r = gpg.wait()
+            self.modified = r != 0
+            return r
 
     @classmethod
     def from_disk(cls, sacret_dir):
@@ -90,22 +105,16 @@ def edit_secret(args):
     if os.getenv("EDITOR") is None:
         print("please set EDITOR", file=sys.stderr)
         return 1
-    index = Index.from_disk(args.secrets)
-    if args.name not in index:
-        index.add(args.name)
-        r = index.to_disk()
-        if r != 0:
-            return r
-    secret_file = index[args.name]
-    try:
-        f, temp_file = tempfile.mkstemp(text=True)
+    with Index.from_disk(args.secrets) as index:
+        if args.name not in index:
+            index.add(args.name)
+        secret_file = index[args.name]
+    with tempfile.NamedTemporaryFile(mode="w") as temp_file:
         if os.path.exists(secret_file):
-            subprocess.check_call(["gpg", "-q", "-d", secret_file], stdout=f)
-        subprocess.check_call(["$EDITOR {}".format(temp_file)], shell=True)
-        return subprocess.call(["gpg", "-q", "-e", "-a", "--output", secret_file, temp_file])
-    finally:
-        os.close(f)
-        os.remove(temp_file)
+            subprocess.check_call(["gpg", "-q", "-d", secret_file], stdout=temp_file)
+        subprocess.check_call(["$EDITOR {}".format(temp_file.name)], shell=True)
+        return subprocess.call(["gpg", "-q", "-e", "-a", "--output", secret_file,
+                                temp_file.name])
 
 def argument_secrets(parser):
     default = os.getenv("SACRET_DIR", default=os.path.expanduser("~/.sacret"))
