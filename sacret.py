@@ -109,7 +109,11 @@ def edit_secret(args):
         if args.name not in index:
             index.add(args.name)
         secret_file = index[args.name]
-    with tempfile.NamedTemporaryFile(mode="w") as temp_file:
+    dir = None
+    shm = os.path.abspath(os.path.join(os.sep, "dev", "shm"))
+    if os.path.isdir(shm):
+        dir = shm
+    with tempfile.NamedTemporaryFile(mode="w", dir=dir) as temp_file:
         if os.path.exists(secret_file):
             subprocess.check_call(["gpg", "-q", "-d", secret_file], stdout=temp_file)
         subprocess.check_call(["$EDITOR {}".format(temp_file.name)], shell=True)
