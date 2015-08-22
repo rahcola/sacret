@@ -36,7 +36,7 @@ class Index(object):
         return self.names[key]
 
     def __iter__(self):
-        return self.names.keys()
+        return self.names.__iter__()
 
     def __contains__(self, item):
         return item in self.names
@@ -51,9 +51,6 @@ class Index(object):
                 path = os.path.join(self.directory, self.__class__.INDEX)
                 cmd = ["gpg", "-q", "-e", "-a", "--output", path]
                 raise subprocess.CalledProcessError(r, cmd)
-
-    def keys(self):
-        return self.names.keys()
 
     def add(self, name):
         self.names[name] = os.path.join(self.directory, hash_name(name, self.salt))
@@ -94,7 +91,7 @@ def hash_name(name, salt):
     return base64.urlsafe_b64encode(hashlib.sha256(bytes).digest()).decode("utf-8")
 
 def list_secrets(args):
-    print("\n".join(Index.from_disk(args["--secrets"]).keys()))
+    print("\n".join(Index.from_disk(args["--secrets"])))
     return 0
 
 def show_secret(args):
