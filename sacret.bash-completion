@@ -37,8 +37,7 @@ _sacret () {
                 ;;
             show|copy|edit)
                 local params=$(_sacret_find_params "-s --secrets" "${COMP_WORDS[*]}")
-                #hack to do tilde expand
-                local names=$(./sacret.py list ${params/ \~\// $HOME\/} 2>/dev/null)
+                local names=$(./sacret.py list ${params} 2>/dev/null)
                 COMPREPLY=($(compgen -W "${names}" -- ${cur}))
                 COMPREPLY+=($(compgen -W "${flags}" -- ${cur}))
                 ;;
