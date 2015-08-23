@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 """Usage:
-  sacret.py (init | list) [--secrets <dir>]
-  sacret.py (show | copy | edit) [--secrets <dir>] <secret>
+  sacret.py init [--secrets <dir>] <gpg_name>
+  sacret.py list [--secrets <dir>]
+  sacret.py (show | copy) [--secrets <dir>] <secret>
+  sacret.py edit [--secrets <dir>] <gpg_name> <secret>
   sacret.py (-h | --help | -v | --version)
 
 Options:
@@ -10,7 +12,7 @@ Options:
   -v --version              Show version.
 
 """
-import base64
+import binascii
 from docopt import docopt
 import hashlib
 import os
@@ -20,113 +22,88 @@ import sys
 import tempfile
 
 
-class Index(object):
-    INDEX = "index.asc"
+decrypt = ["gpg", "-q", "--batch", "-d"]
+encrypt = ["gpg", "-q", "--batch", "-a", "-e"]
 
-    def __init__(self, salt, names, directory):
-        self.salt = salt
-        self.names = names
-        self.directory = directory
-        self.modified = False
-
-    def __len__(self):
-        return len(self.names)
-
-    def __getitem__(self, key):
-        return self.names[key]
-
-    def __iter__(self):
-        return self.names.__iter__()
-
-    def __contains__(self, item):
-        return item in self.names
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        if exc_type is None and self.modified:
-            r = self.to_disk()
-            if r != 0:
-                path = os.path.join(self.directory, self.__class__.INDEX)
-                cmd = ["gpg", "-q", "-e", "-a", "--output", path]
-                raise subprocess.CalledProcessError(r, cmd)
-
-    def add(self, name):
-        self.names[name] = os.path.join(self.directory, hash_name(name, self.salt))
-        self.modified = True
-
-    def to_disk(self):
-        path = os.path.join(self.directory, self.__class__.INDEX)
-        with subprocess.Popen(["gpg", "-q", "-e", "-a", "--output", path],
+def read_salt(index):
+    with subprocess.Popen(decrypt + [index], stdout=subprocess.PIPE) as gpg:
+        with subprocess.Popen(["head -n 1 | tr -d '\n'"],
+                              shell=True,
                               universal_newlines=True,
-                              stdin=subprocess.PIPE) as gpg:
-            gpg.communicate("\n".join([self.salt] + list(self.keys())) + "\n")
-            r = gpg.wait()
-            self.modified = r != 0
-            return r
+                              stdin=gpg.stdout,
+                              stdout=subprocess.PIPE) as p:
+            gpg.stdout.close()
+            salt = p.communicate()[0]
+            if p.poll() != 0:
+                sys.exit(p.poll())
+            return bytearray.fromhex(salt)
 
-    @classmethod
-    def from_disk(cls, directory):
-        path = os.path.join(directory, cls.INDEX)
-        salt, *names = subprocess.check_output(["gpg", "-q", "-d", path],
-                                               universal_newlines=True).splitlines()
-        return cls(salt,
-                   {name: os.path.join(directory, hash_name(name, salt))
-                    for name in names},
-                   directory)
+def name_hash(name, salt):
+    return hashlib.sha256(name.encode() + salt).hexdigest()
 
-    @classmethod
-    def init(cls, directory):
-        path = os.path.join(directory, cls.INDEX)
-        if os.path.exists(path):
-            print("index file {} exists".format(path), file=sys.stderr)
-            return 1
-        salt = base64.urlsafe_b64encode(os.urandom(16)).decode("utf-8")
-        return cls(salt, {}, directory).to_disk()
-
-
-def hash_name(name, salt):
-    bytes = name.encode("utf-8") + base64.urlsafe_b64decode(salt)
-    return base64.urlsafe_b64encode(hashlib.sha256(bytes).digest()).decode("utf-8")
+def init_secrets(args):
+    path = os.path.join(args["--secrets"], "index.asc")
+    salt = binascii.hexlify(os.urandom(16))
+    with subprocess.Popen(encrypt + ["-r", args["<gpg_name>"], "--output", path],
+                          stdin=subprocess.PIPE) as gpg:
+        gpg.communicate(salt + b"\n")
+        if gpg.poll() != 0:
+            sys.exit(gpg.poll())
 
 def list_secrets(args):
-    print("\n".join(Index.from_disk(args["--secrets"])))
-    return 0
+    index = os.path.join(args["--secrets"], "index.asc")
+    with subprocess.Popen(decrypt + [index], stdout=subprocess.PIPE) as gpg:
+        with subprocess.Popen(["tail", "-n", "+2"], stdin=gpg.stdout) as tail:
+            gpg.stdout.close()
+            if tail.wait() != 0:
+                sys.exit(tail.returncode)
 
 def show_secret(args):
-    return subprocess.call(["gpg", "-q", "-d",
-                            Index.from_disk(args["--secrets"])[args["<secret>"]]])
+    index = os.path.join(args["--secrets"], "index.asc")
+    salt = read_salt(index)
+    secret = os.path.join(args["--secrets"], name_hash(args["<secret>"], salt))
+    subprocess.check_call(decrypt + [secret])
 
 def copy_secret(args):
-    with subprocess.Popen(["gpg", "-q", "-d",
-                           Index.from_disk(args["--secrets"])[args["<secret>"]]],
-                          stdout=subprocess.PIPE) as gpg:
-        with subprocess.Popen(["head -q -n 1 | tr -d '\n' | xclip -selection clipboard"],
+    index = os.path.join(args["--secrets"], "index.asc")
+    salt = read_salt(index)
+    secret = os.path.join(args["--secrets"], name_hash(args["<secret>"], salt))
+    with subprocess.Popen(decrypt + [secret], stdout=subprocess.PIPE) as gpg:
+        with subprocess.Popen(["head -n 1 | tr -d '\n' | xclip -selection clipboard"],
                               shell=True,
-                              stdin=gpg.stdout) as head:
+                              stdin=gpg.stdout) as xclip:
             gpg.stdout.close()
-            return head.wait()
+            if xclip.wait() != 0:
+                sys.exit(xclip.returncode)
+
+def add_secret(index, gpg_name, secret):
+    content = subprocess.check_output(decrypt + [index], universal_newlines=True)
+    if secret not in content.splitlines():
+        with subprocess.Popen(encrypt + ["-r", gpg_name, "--yes", "--output", index],
+                              universal_newlines=True,
+                              stdin=subprocess.PIPE) as gpg:
+            gpg.communicate(content + secret + "\n")
+            if gpg.poll() != 0:
+                sys.exit(gpg.poll())
 
 def edit_secret(args):
     if os.getenv("EDITOR") is None:
         print("please set EDITOR", file=sys.stderr)
-        return 1
-    with Index.from_disk(args["--secrets"]) as index:
-        secret = args["<secret>"]
-        if secret not in index:
-            index.add(secret)
-        secret_file = index[secret]
+        sys.exit(1)
+    index = os.path.join(args["--secrets"], "index.asc")
+    add_secret(index, args["<gpg_name>"], args["<secret>"])
+    salt = read_salt(index)
+    secret = os.path.join(args["--secrets"], name_hash(args["<secret>"], salt))
     dir = None
     shm = os.path.abspath(os.path.join(os.sep, "dev", "shm"))
     if os.path.isdir(shm):
         dir = shm
     with tempfile.NamedTemporaryFile(mode="w", dir=dir) as temp_file:
-        if os.path.exists(secret_file):
-            subprocess.check_call(["gpg", "-q", "-d", secret_file], stdout=temp_file)
+        if os.path.exists(secret):
+            subprocess.check_call(decrypt + [secret], stdout=temp_file)
         subprocess.check_call(["$EDITOR {}".format(temp_file.name)], shell=True)
-        return subprocess.call(["gpg", "-q", "-e", "-a", "--output", secret_file,
-                                temp_file.name])
+        subprocess.check_call(encrypt + ["-r", args["<gpg_name>"], "--yes",
+                                         "--output", secret, temp_file.name])
 
 def parse_command(arguments, actions):
     for command in actions:
@@ -136,7 +113,7 @@ def parse_command(arguments, actions):
 if __name__ == "__main__":
     arguments = docopt(__doc__, version="sacret 0.0.1")
     actions = {
-        "init": lambda args: Index.init(args["--secrets"]),
+        "init": init_secrets,
         "list": list_secrets,
         "show": show_secret,
         "copy": copy_secret,
@@ -144,6 +121,6 @@ if __name__ == "__main__":
     }
     arguments["--secrets"] = os.path.expanduser(arguments["--secrets"])
     try:
-        sys.exit(parse_command(arguments, actions)(arguments))
+        parse_command(arguments, actions)(arguments)
     except subprocess.CalledProcessError as e:
         sys.exit(e.returncode)
