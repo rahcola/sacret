@@ -86,7 +86,7 @@ def tmp_dir():
 
 def edit_secret(args):
     if os.getenv("EDITOR") is None:
-        print("please set EDITOR", file=sys.stderr)
+        sys.stderr.write("please set EDITOR\n")
         sys.exit(1)
     add_secret(args["index"], args["<gpg_name>"], args["<secret>"])
     secret = args["secret"]

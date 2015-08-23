@@ -37,7 +37,7 @@ _sacret () {
                 ;;
             show|copy|edit)
                 local params=$(_sacret_find_params "-s --secrets" "${COMP_WORDS[*]}")
-                local names=$(./sacret.py list ${params} 2>/dev/null)
+                local names=$(sacret.py list ${params} 2>/dev/null)
                 COMPREPLY=($(compgen -W "${names}" -- ${cur}))
                 COMPREPLY+=($(compgen -W "${flags}" -- ${cur}))
                 ;;
@@ -47,4 +47,4 @@ _sacret () {
     fi
 }
 
-complete -F _sacret './sacret.py'
+complete -F _sacret 'sacret.py'

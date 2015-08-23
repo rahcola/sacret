@@ -8,6 +8,10 @@ setup(
     author='Jani Rahkola',
     author_email='jani.rahkola@iki.fi',
     license='MIT',
-    packages=[],
-    install_requires=['docopt']
+    install_requires=['docopt'],
+    packages=['sacret'],
+    package_data={
+        "sacret": ['sacret.bash-completion']
+    },
+    scripts=['sacret/sacret.py']
 )
