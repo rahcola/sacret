@@ -86,6 +86,11 @@ def add_secret(index, gpg_name, secret):
             if gpg.poll() != 0:
                 sys.exit(gpg.poll())
 
+def tmp_dir():
+    shm = os.path.abspath(os.path.join(os.sep, "dev", "shm"))
+    if os.path.isdir(shm):
+        return shm
+
 def edit_secret(args):
     if os.getenv("EDITOR") is None:
         print("please set EDITOR", file=sys.stderr)
@@ -94,11 +99,7 @@ def edit_secret(args):
     add_secret(index, args["<gpg_name>"], args["<secret>"])
     salt = read_salt(index)
     secret = os.path.join(args["--secrets"], name_hash(args["<secret>"], salt))
-    dir = None
-    shm = os.path.abspath(os.path.join(os.sep, "dev", "shm"))
-    if os.path.isdir(shm):
-        dir = shm
-    with tempfile.NamedTemporaryFile(mode="w", dir=dir) as temp_file:
+    with tempfile.NamedTemporaryFile(mode="w", dir=tmp_dir()) as temp_file:
         if os.path.exists(secret):
             subprocess.check_call(decrypt + [secret], stdout=temp_file)
         subprocess.check_call(["$EDITOR {}".format(temp_file.name)], shell=True)
