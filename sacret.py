@@ -42,31 +42,28 @@ def name_hash(name, salt):
     return hashlib.sha256(name.encode() + salt).hexdigest()
 
 def init_secrets(args):
-    path = os.path.join(args["--secrets"], "index.asc")
     salt = binascii.hexlify(os.urandom(16))
-    with subprocess.Popen(encrypt + ["-r", args["<gpg_name>"], "--output", path],
+    with subprocess.Popen(encrypt + ["-r", args["<gpg_name>"],
+                                     "--output", args["index"]],
                           stdin=subprocess.PIPE) as gpg:
         gpg.communicate(salt + b"\n")
         if gpg.poll() != 0:
             sys.exit(gpg.poll())
 
 def list_secrets(args):
-    index = os.path.join(args["--secrets"], "index.asc")
-    with subprocess.Popen(decrypt + [index], stdout=subprocess.PIPE) as gpg:
+    with subprocess.Popen(decrypt + [args["index"]], stdout=subprocess.PIPE) as gpg:
         with subprocess.Popen(["tail", "-n", "+2"], stdin=gpg.stdout) as tail:
             gpg.stdout.close()
             if tail.wait() != 0:
                 sys.exit(tail.returncode)
 
 def show_secret(args):
-    index = os.path.join(args["--secrets"], "index.asc")
-    salt = read_salt(index)
+    salt = read_salt(args["index"])
     secret = os.path.join(args["--secrets"], name_hash(args["<secret>"], salt))
     subprocess.check_call(decrypt + [secret])
 
 def copy_secret(args):
-    index = os.path.join(args["--secrets"], "index.asc")
-    salt = read_salt(index)
+    salt = read_salt(args["index"])
     secret = os.path.join(args["--secrets"], name_hash(args["<secret>"], salt))
     with subprocess.Popen(decrypt + [secret], stdout=subprocess.PIPE) as gpg:
         with subprocess.Popen(["head -n 1 | tr -d '\n' | xclip -selection clipboard"],
@@ -95,7 +92,7 @@ def edit_secret(args):
     if os.getenv("EDITOR") is None:
         print("please set EDITOR", file=sys.stderr)
         sys.exit(1)
-    index = os.path.join(args["--secrets"], "index.asc")
+    index = args["index"]
     add_secret(index, args["<gpg_name>"], args["<secret>"])
     salt = read_salt(index)
     secret = os.path.join(args["--secrets"], name_hash(args["<secret>"], salt))
@@ -121,6 +118,7 @@ if __name__ == "__main__":
         "edit": edit_secret
     }
     arguments["--secrets"] = os.path.expanduser(arguments["--secrets"])
+    arguments["index"] = os.path.join(arguments["--secrets"], "index.asc")
     try:
         parse_command(arguments, actions)(arguments)
     except subprocess.CalledProcessError as e:
