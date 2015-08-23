@@ -58,14 +58,10 @@ def list_secrets(args):
                 sys.exit(tail.returncode)
 
 def show_secret(args):
-    salt = read_salt(args["index"])
-    secret = os.path.join(args["--secrets"], name_hash(args["<secret>"], salt))
-    subprocess.check_call(decrypt + [secret])
+    subprocess.check_call(decrypt + [args["secret"]])
 
 def copy_secret(args):
-    salt = read_salt(args["index"])
-    secret = os.path.join(args["--secrets"], name_hash(args["<secret>"], salt))
-    with subprocess.Popen(decrypt + [secret], stdout=subprocess.PIPE) as gpg:
+    with subprocess.Popen(decrypt + [args["secret"]], stdout=subprocess.PIPE) as gpg:
         with subprocess.Popen(["head -n 1 | tr -d '\n' | xclip -selection clipboard"],
                               shell=True,
                               stdin=gpg.stdout) as xclip:
@@ -92,10 +88,8 @@ def edit_secret(args):
     if os.getenv("EDITOR") is None:
         print("please set EDITOR", file=sys.stderr)
         sys.exit(1)
-    index = args["index"]
-    add_secret(index, args["<gpg_name>"], args["<secret>"])
-    salt = read_salt(index)
-    secret = os.path.join(args["--secrets"], name_hash(args["<secret>"], salt))
+    add_secret(args["index"], args["<gpg_name>"], args["<secret>"])
+    secret = args["secret"]
     with tempfile.NamedTemporaryFile(mode="w", dir=tmp_dir()) as temp_file:
         if os.path.exists(secret):
             subprocess.check_call(decrypt + [secret], stdout=temp_file)
@@ -119,6 +113,10 @@ if __name__ == "__main__":
     }
     arguments["--secrets"] = os.path.expanduser(arguments["--secrets"])
     arguments["index"] = os.path.join(arguments["--secrets"], "index.asc")
+    if arguments["<secret>"] is not None:
+        arguments["secret"] = os.path.join(
+            arguments["--secrets"],
+            name_hash(arguments["<secret>"], read_salt(arguments["index"])))
     try:
         parse_command(arguments, actions)(arguments)
     except subprocess.CalledProcessError as e:
